@@ -1,0 +1,44 @@
+# --- Secrets & environment ---
+.env
+.env.local
+.env.*.local
+backend/.env
+influencer-marketplace/.env.local
+*.pem
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.sqlite3
+venv/
+.venv/
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+
+# --- Media uploads (never commit user content) ---
+backend/media/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+
+# --- Terraform (state may contain secrets; real tfvars hold config) ---
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!**/terraform.tfvars.example
+crash.log
+*.tfplan
+
+infrastructure/terraform/*.txt
+
+# --- Dev logs ---
+*.log
+
+# --- Scratch output files ---
+*_out.txt
+fresh.txt

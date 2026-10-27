@@ -1,0 +1,33 @@
+# =============================================================================
+# InfluenceHub — Terraform variables example
+#
+# Copy to terraform.tfvars and fill in. NEVER put AWS access keys in this (or
+# any) Terraform file; the provider reads credentials from your environment.
+#   copy:  cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+aws_region = "ap-south-1"
+
+project_name = "influencehub"
+
+# ONE globally-unique bucket for ALL uploads (profiles/, business_logos/,
+# campaigns/, chat/). Must be lowercase.
+s3_bucket_name = "influencehub-media-change-me"
+
+# Keep false: versioning doubles storage on overwrite (cost).
+enable_s3_versioning = false
+
+# Read-only CORS origins for local front-ends during development.
+allowed_cors_origins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+]
+
+# Transactional verification email identity.
+# Leave empty / set create_ses_identity=false to skip SES entirely.
+create_ses_identity = true
+ses_from_email      = "" # e.g. "no-reply@your-verified-domain.com"
+
+iam_user_name = "influencehub-app"

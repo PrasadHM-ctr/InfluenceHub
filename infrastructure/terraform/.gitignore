@@ -1,0 +1,30 @@
+# =============================================================================
+# Terraform working files — NEVER commit state or real tfvars.
+# State files contain resource metadata and must stay local / in remote
+# state storage with restricted access, not in Git.
+# =============================================================================
+
+# Local state + locks (may contain sensitive attributes)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Provider plugins / modules cache
+.terraform/
+.terraform.lock.hcl
+
+# Real variable files (the .example is committed, real values are not)
+*.tfvars
+!terraform.tfvars.example
+
+# Crash / override leftovers
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Plan files (plans can embed configuration; review then delete)
+*.tfplan
+plan.out
