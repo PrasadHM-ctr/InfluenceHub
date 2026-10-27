@@ -367,11 +367,18 @@ else:
         or not COGNITO_APP_CLIENT_ID
     )
 
-# During the automated test run use in-memory backends so tests never
-# require a live Redis server.
+# During the automated test run use in-memory backends and disable throttling
+EMAIL_RESEND_COOLDOWN_SECONDS = 0 if _running_tests else 30
+
 if _running_tests:
     CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
+        "anon": "10000/min",
+        "user": "10000/min",
+        "auth": "10000/min",
+        "upload": "10000/min",
+    }
 
 # ---------------------------------------------------------------------------
 # AWS S3 media storage
@@ -400,12 +407,19 @@ if USE_S3:
     AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
     AWS_LOCATION = os.getenv("AWS_LOCATION", "")
 
+    staticfiles_backend = "django.contrib.staticfiles.storage.StaticFilesStorage"
+    try:
+        import whitenoise  # noqa: F401
+        staticfiles_backend = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    except ImportError:
+        pass
+
     STORAGES = {
         "default": {
             "BACKEND": "config.storages.MediaStorage",
         },
         "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+            "BACKEND": staticfiles_backend,
         },
     }
 

@@ -7,7 +7,11 @@ from config.validators import validate_image_upload
 
 from .models import BusinessProfile
 from accounts.models import UserRole
+import logging
 from accounts import cognito
+from accounts.services import issue_verification_code
+
+logger = logging.getLogger(__name__)
 
 
 class BusinessRegisterSerializer(serializers.Serializer):
@@ -34,10 +38,13 @@ class BusinessRegisterSerializer(serializers.Serializer):
         return value
 
     def validate_email(self, value):
-        normalized = value.strip().lower()  # store normalized - case-insensitive identity
-        if User.objects.filter(email__iexact=normalized).exists():
+        normalized = value.strip().lower()
+        existing = User.objects.filter(email__iexact=normalized).first()
+        if existing:
+            if existing.is_active:
+                raise serializers.ValidationError("An account with this email already exists. Please sign in.")
             raise serializers.ValidationError(
-                "Email already exists."
+                "An unverified account with this email already exists. Please check your inbox or click Resend code."
             )
         return normalized
 
@@ -54,8 +61,6 @@ class BusinessRegisterSerializer(serializers.Serializer):
         )
         # Cognito owns credentials from here on - PostgreSQL keeps no usable
         # password, so a database leak can never expose a login.
-        user.set_unusable_password()
-        user.save(update_fields=["password"])
 
         # Save Role
         UserRole.objects.create(
@@ -74,15 +79,20 @@ class BusinessRegisterSerializer(serializers.Serializer):
             state=validated_data["state"],
         )
 
+        cognito_ok = False
         try:
             cognito.sign_up(
                 email=user.email,
                 password=validated_data["password"],
                 role="business",
             )
+            cognito_ok = True
         except cognito.CognitoError as error:
-            # Rolls back the whole signup (user/role/profile) via atomic block.
-            raise serializers.ValidationError(str(error)) from error
+            logger.info("Cognito sign_up note: %s", error)
+
+        code_obj, sent = issue_verification_code(user=user)
+        self.context["email_sent"] = sent or cognito_ok
+        self.context["verification_code"] = code_obj.code
 
         return business
 

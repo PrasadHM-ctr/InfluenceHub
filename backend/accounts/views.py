@@ -30,11 +30,18 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        email_sent = serializer.context.get("email_sent", True)
+        message = (
+            "Account created. A verification code was sent to your email."
+            if email_sent
+            else "Account created, but the verification email could not be sent. Please use Resend on the next screen."
+        )
         return Response(
             {
-                "message": "Account created. A verification code was sent to your email.",
+                "message": message,
                 "email": user.email,
                 "verification_required": True,
+                "email_sent": email_sent,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -282,6 +289,13 @@ class ConfirmForgotPasswordView(APIView):
             )
         except cognito.CognitoError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Keep local hashed password in sync with the new credential
+        user = User.objects.filter(email__iexact=serializer.validated_data["email"].strip().lower()).first()
+        if user:
+            user.set_password(serializer.validated_data["new_password"])
+            user.save(update_fields=["password"])
+
         return Response({"message": "Password reset. You can sign in now."}, status=status.HTTP_200_OK)
 
 

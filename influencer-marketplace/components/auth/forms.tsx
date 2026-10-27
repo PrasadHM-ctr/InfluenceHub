@@ -136,7 +136,11 @@ export function BusinessRegistrationForm() {
   const onSubmit = async (values: BusinessValues) => {
     try {
       const result = await api.registerBusiness(values);
-      toast.success(result.email_sent === false ? "Unable to send verification email. Please try again." : "Account created! Verification code sent to your email.");
+      if (result.email_sent === false) {
+        toast.warning("Account created, but verification email could not be sent. Please use Resend code on the next screen.");
+      } else {
+        toast.success("Account created! Verification code sent to your email.");
+      }
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}&role=business`);
     } catch (error) {
       toast.error(getApiError(error));
@@ -177,7 +181,11 @@ export function InfluencerRegistrationForm() {
   const onSubmit = async (values: InfluencerValues) => {
     try {
       const result = await api.registerInfluencer(values);
-      toast.success(result.email_sent === false ? "Unable to send verification email. Please try again." : "Account created! Verification code sent to your email.");
+      if (result.email_sent === false) {
+        toast.warning("Account created, but verification email could not be sent. Please use Resend code on the next screen.");
+      } else {
+        toast.success("Account created! Verification code sent to your email.");
+      }
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}&role=influencer`);
     } catch (error) {
       toast.error(getApiError(error));

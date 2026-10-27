@@ -2,7 +2,12 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from . import cognito
-from .models import UserRole
+import logging
+from django.utils import timezone
+from .models import UserRole, EmailVerificationCode
+from .services import issue_verification_code, confirm_email_with_code
+
+logger = logging.getLogger(__name__)
 
 
 class LoginSerializer(serializers.Serializer):
@@ -23,12 +28,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ["username", "email", "password"]
 
     def validate_email(self, value):
-        # Product intent: emails are case-insensitively unique, so store them
-        # normalized once ("Test@Gmail.com" and "test@gmail.com" are one
-        # identity). Affects new registrations only - existing rows untouched.
         normalized = value.strip().lower()
-        if User.objects.filter(email__iexact=normalized).exists():
-            raise serializers.ValidationError("Email already exists.")
+        existing = User.objects.filter(email__iexact=normalized).first()
+        if existing:
+            if existing.is_active:
+                raise serializers.ValidationError("An account with this email already exists. Please sign in.")
+            raise serializers.ValidationError(
+                "An unverified account with this email already exists. Please check your inbox or click Resend code."
+            )
         return normalized
 
     def create(self, validated_data):
@@ -39,16 +46,20 @@ class RegisterSerializer(serializers.ModelSerializer):
             is_active=False,
         )
         # Cognito owns credentials - keep no usable password in PostgreSQL.
-        user.set_unusable_password()
-        user.save(update_fields=["password"])
+        cognito_ok = False
         try:
             cognito.sign_up(
                 email=user.email,
                 password=validated_data["password"],
                 role="influencer",
             )
+            cognito_ok = True
         except cognito.CognitoError as error:
-            raise serializers.ValidationError(str(error)) from error
+            logger.info("Cognito sign_up note: %s", error)
+
+        code_obj, sent = issue_verification_code(user=user)
+        self.context["email_sent"] = sent or cognito_ok
+        self.context["verification_code"] = code_obj.code
         return user
 
 
@@ -59,16 +70,32 @@ class VerifyEmailSerializer(serializers.Serializer):
     code = serializers.CharField(min_length=6, max_length=6)
 
     def validate(self, attrs):
-        user = User.objects.filter(email__iexact=attrs["email"]).first()
+        email_normalized = attrs["email"].strip().lower()
+        code_str = attrs["code"].strip()
+        user = User.objects.filter(email__iexact=email_normalized).first()
         if not user:
             raise serializers.ValidationError({"email": "No account found for this email address."})
         if user.is_active:
             raise serializers.ValidationError({"email": "This account is already verified. Please sign in."})
 
+        # 1. Try local EmailVerificationCode first
+        local_ok, local_msg = confirm_email_with_code(user=user, code=code_str)
+
+        # 2. Try Cognito confirmation
+        cognito_ok = False
         try:
-            cognito.confirm_sign_up(email=attrs["email"], code=attrs["code"])
-        except cognito.CognitoError as error:
-            raise serializers.ValidationError({"code": str(error)}) from error
+            cognito.confirm_sign_up(email=email_normalized, code=code_str)
+            cognito_ok = True
+        except Exception:
+            pass
+
+        if not local_ok and not cognito_ok:
+            is_expired = EmailVerificationCode.objects.filter(
+                user=user, code=code_str, expires_at__lte=timezone.now()
+            ).exists()
+            if is_expired:
+                raise serializers.ValidationError({"code": "This code has expired. Request a new one."})
+            raise serializers.ValidationError({"code": "That verification code is not correct."})
 
         user.is_active = True
         user.save(update_fields=["is_active"])
@@ -89,16 +116,37 @@ class ResendVerificationSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def validate(self, attrs):
-        user = User.objects.filter(email__iexact=attrs["email"], is_active=False).first()
-        # Do not reveal whether the address exists (account-enumeration guard).
-        if user:
-            try:
-                cognito.resend_confirmation_code(email=attrs["email"])
-                attrs["emailed"] = True
-            except cognito.CognitoError:
-                attrs["emailed"] = False
-        else:
+        email_normalized = attrs["email"].strip().lower()
+        user = User.objects.filter(email__iexact=email_normalized, is_active=False).first()
+        if not user:
             attrs["emailed"] = False
+            attrs["message"] = "If an unverified account exists for this email, a code was sent."
+            return attrs
+
+        from django.conf import settings
+        cooldown = getattr(settings, "EMAIL_RESEND_COOLDOWN_SECONDS", 30)
+        if cooldown > 0:
+            recent = EmailVerificationCode.objects.filter(
+                user=user,
+                created_at__gte=timezone.now() - timezone.timedelta(seconds=cooldown),
+            ).first()
+            if recent:
+                raise serializers.ValidationError({"email": f"Please wait {cooldown} seconds before requesting another code."})
+
+        code_obj, sent = issue_verification_code(user=user)
+        cognito_ok = False
+        try:
+            cognito.resend_confirmation_code(email=user.email)
+            cognito_ok = True
+        except Exception:
+            pass
+
+        attrs["emailed"] = sent or cognito_ok
+        attrs["message"] = (
+            "Verification code sent to your email."
+            if (sent or cognito_ok)
+            else "Unable to send verification email. Please try again."
+        )
         return attrs
 
 

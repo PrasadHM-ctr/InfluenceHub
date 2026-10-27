@@ -191,3 +191,130 @@ class AuthFailureAndResetTests(APITestCase):
         res = self.client.post("/api/token/refresh/", {"refresh": "fake-refresh.999999"}, format="json")
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
+
+
+from accounts.models import EmailVerificationCode
+from accounts.services import issue_verification_code, confirm_email_with_code
+from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
+import io
+from PIL import Image
+
+def _make_test_image():
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), color="purple").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@override_settings(CACHES=TEST_CACHES)
+class EmailVerificationAndUploadTests(APITestCase):
+    def setUp(self):
+        _clear_fake_pool()
+
+    def test_registration_creates_email_verification_code_record(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "otp-biz", "email": "otp-biz@example.com"}
+        res = self.client.post("/api/business/register/", payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(res.data["verification_required"])
+
+        user = User.objects.get(email=payload["email"])
+        code_record = EmailVerificationCode.objects.filter(user=user, consumed_at__isnull=True).first()
+        self.assertIsNotNone(code_record)
+        self.assertEqual(len(code_record.code), 6)
+
+    def test_confirm_with_postgres_generated_code(self):
+        payload = {**INFLUENCER_PAYLOAD, "username": "otp-inf", "email": "otp-inf@example.com"}
+        self.client.post("/api/influencer/register/", payload, format="json")
+        user = User.objects.get(email=payload["email"])
+        code_record = EmailVerificationCode.objects.filter(user=user, consumed_at__isnull=True).first()
+
+        verify_res = self.client.post(
+            "/api/verify-email/", {"email": payload["email"], "code": code_record.code}, format="json"
+        )
+        self.assertEqual(verify_res.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        code_record.refresh_from_db()
+        self.assertTrue(code_record.is_consumed)
+
+    def test_expired_code_rejected(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "expired-biz", "email": "expired-biz@example.com"}
+        self.client.post("/api/business/register/", payload, format="json")
+        user = User.objects.get(email=payload["email"])
+        code_record = EmailVerificationCode.objects.filter(user=user).first()
+        code_record.expires_at = timezone.now() - timezone.timedelta(minutes=10)
+        code_record.save()
+
+        res = self.client.post("/api/verify-email/", {"email": payload["email"], "code": code_record.code}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("expired", str(res.data).lower())
+
+    def test_consumed_code_cannot_be_reused(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "reuse-biz", "email": "reuse-biz@example.com"}
+        self.client.post("/api/business/register/", payload, format="json")
+        user = User.objects.get(email=payload["email"])
+        code_record = EmailVerificationCode.objects.filter(user=user).first()
+
+        # First verification
+        res1 = self.client.post("/api/verify-email/", {"email": payload["email"], "code": code_record.code}, format="json")
+        self.assertEqual(res1.status_code, status.HTTP_200_OK)
+
+        # Second verification attempt with same code
+        res2 = self.client.post("/api/verify-email/", {"email": payload["email"], "code": code_record.code}, format="json")
+        self.assertEqual(res2.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_duplicate_registration_handling(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "dup-biz", "email": "dup-biz@example.com"}
+        self.client.post("/api/business/register/", payload, format="json")
+
+        # Duplicate submission when unverified
+        res2 = self.client.post("/api/business/register/", payload, format="json")
+        self.assertEqual(res2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("unverified", str(res2.data).lower())
+
+        # Now verify user
+        user = User.objects.get(email=payload["email"])
+        user.is_active = True
+        user.save()
+
+        # Duplicate submission when verified
+        res3 = self.client.post("/api/business/register/", payload, format="json")
+        self.assertEqual(res3.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists", str(res3.data).lower())
+
+    def test_resend_cooldown_enforced_when_configured(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "cool-biz", "email": "cool-biz@example.com"}
+        self.client.post("/api/business/register/", payload, format="json")
+
+        with override_settings(EMAIL_RESEND_COOLDOWN_SECONDS=60):
+            resend = self.client.post("/api/resend-verification/", {"email": payload["email"]}, format="json")
+            self.assertEqual(resend.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("wait", str(resend.data).lower())
+
+    def test_logo_upload_requires_authentication_and_business_role(self):
+        # Unauthenticated request fails
+        img_bytes = _make_test_image()
+        logo_file = SimpleUploadedFile("logo.png", img_bytes, content_type="image/png")
+        unauth = self.client.put("/api/business/profile/", {"logo": logo_file}, format="multipart")
+        self.assertEqual(unauth.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # Influencer cannot upload to business profile
+        inf_payload = {**INFLUENCER_PAYLOAD, "username": "role-test-inf", "email": "role-test-inf@example.com"}
+        self.client.post("/api/influencer/register/", inf_payload, format="json")
+        self.client.post("/api/verify-email/", {"email": inf_payload["email"], "code": FAKE_CONFIRM_CODE}, format="json")
+        login = self.client.post("/api/login/", {"username": inf_payload["username"], "password": inf_payload["password"]}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+
+        wrong_role = self.client.put("/api/business/profile/", {"logo": logo_file}, format="multipart")
+        self.assertEqual(wrong_role.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_upload_invalid_file_type_rejected(self):
+        biz_payload = {**BUSINESS_PAYLOAD, "username": "upload-biz", "email": "upload-biz@example.com"}
+        self.client.post("/api/business/register/", biz_payload, format="json")
+        self.client.post("/api/verify-email/", {"email": biz_payload["email"], "code": FAKE_CONFIRM_CODE}, format="json")
+        login = self.client.post("/api/login/", {"username": biz_payload["username"], "password": biz_payload["password"]}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+
+        fake_exe = SimpleUploadedFile("dangerous.exe", b"binary content", content_type="application/octet-stream")
+        res = self.client.put("/api/business/profile/", {"logo": fake_exe}, format="multipart")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
