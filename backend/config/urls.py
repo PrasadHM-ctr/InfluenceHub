@@ -15,7 +15,18 @@ def health_check(request):
     return JsonResponse({"status": "ok", "app": "InfluenceHub"})
 
 
+def root_view(request):
+    return JsonResponse({
+        "status": "online",
+        "app": "InfluenceHub API",
+        "health": "/api/health/",
+        "admin": "/admin/",
+        "message": "InfluenceHub backend API is running. The frontend web application is hosted on Vercel."
+    })
+
+
 urlpatterns = [
+    path("", root_view, name="root"),
     path("admin/", admin.site.urls),
     path("api/health/", health_check, name="health-check"),
 
