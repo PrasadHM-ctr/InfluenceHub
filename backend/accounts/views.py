@@ -151,10 +151,11 @@ class LoginView(APIView):
                 )
 
             if token_role and role and token_role != role:
-                return Response(
-                    {"detail": "Account role does not match the authenticated identity."},
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
+                if role != "owner" and not user.is_staff and not user.is_superuser:
+                    return Response(
+                        {"detail": "Account role does not match the authenticated identity."},
+                        status=status.HTTP_401_UNAUTHORIZED,
+                    )
         else:
             return Response(
                 {"detail": "No active account found for that username or email."},
