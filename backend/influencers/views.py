@@ -171,10 +171,10 @@ def _filtered_influencers(params) -> QuerySet[InfluencerProfile]:
     return queryset
 
 
-# Authenticated users can browse influencers (server-side search + pagination)
+# Authenticated business accounts browse creators to hire them
 class InfluencerListView(generics.ListAPIView):
     serializer_class = InfluencerListSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBusinessUser]
     pagination_class = InfluencerSearchPagination
 
     def get_queryset(self):
@@ -184,7 +184,7 @@ class InfluencerListView(generics.ListAPIView):
 class InfluencerDetailView(RetrieveAPIView):
     queryset = InfluencerProfile.objects.select_related("user")
     serializer_class = InfluencerProfileSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBusinessUser]
 
 
 class VerificationRequestView(APIView):
