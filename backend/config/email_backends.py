@@ -44,8 +44,12 @@ class SESEmailBackend(BaseEmailBackend):
                 if message.bcc:
                     destination["BccAddresses"] = list(message.bcc)
 
+                from_address = (
+                    getattr(settings, "AWS_SES_FROM_EMAIL", "")
+                    or str(message.from_email)
+                )
                 payload = {
-                    "FromEmailAddress": str(message.from_email),
+                    "FromEmailAddress": from_address,
                     "Destination": destination,
                     "Content": {"Simple": self._simple_content(message)},
                 }

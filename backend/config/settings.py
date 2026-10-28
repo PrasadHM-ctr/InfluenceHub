@@ -333,7 +333,14 @@ EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", "True")
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "InfluenceHub <no-reply@influencehub.local>")
+_default_sender = (
+    os.getenv("AWS_SES_FROM_EMAIL")
+    or os.getenv("EMAIL_HOST_USER")
+    or "no-reply@influencehub.com"
+)
+if "@" in _default_sender and not _default_sender.startswith("InfluenceHub"):
+    _default_sender = f"InfluenceHub <{_default_sender}>"
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", _default_sender)
 
 # Amazon SES settings — read only; nothing here creates AWS resources.
 AWS_SES_REGION_NAME = os.getenv("AWS_SES_REGION_NAME", os.getenv("AWS_S3_REGION_NAME", "ap-south-1"))

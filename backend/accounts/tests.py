@@ -249,6 +249,29 @@ class EmailVerificationAndUploadTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("expired", str(res.data).lower())
 
+    def test_otp_attempt_limit_and_lockout(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "lockout-biz", "email": "lockout-biz@example.com"}
+        self.client.post("/api/business/register/", payload, format="json")
+        user = User.objects.get(email=payload["email"])
+        code_record = EmailVerificationCode.objects.filter(user=user, consumed_at__isnull=True).first()
+        real_code = code_record.code
+
+        # Attempts 1-4 with wrong code
+        for i in range(1, 5):
+            res = self.client.post("/api/verify-email/", {"email": payload["email"], "code": "000000"}, format="json")
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+            remaining = 5 - i
+            self.assertIn(f"{remaining} attempt", str(res.data))
+
+        # 5th attempt locks out
+        res5 = self.client.post("/api/verify-email/", {"email": payload["email"], "code": "000000"}, format="json")
+        self.assertEqual(res5.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("too many failed attempts", str(res5.data).lower())
+
+        # Correct code now fails because the OTP was deactivated
+        res_real = self.client.post("/api/verify-email/", {"email": payload["email"], "code": real_code}, format="json")
+        self.assertEqual(res_real.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_consumed_code_cannot_be_reused(self):
         payload = {**BUSINESS_PAYLOAD, "username": "reuse-biz", "email": "reuse-biz@example.com"}
         self.client.post("/api/business/register/", payload, format="json")

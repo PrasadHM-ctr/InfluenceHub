@@ -19,6 +19,7 @@ from .models import EmailVerificationCode
 logger = logging.getLogger(__name__)
 
 CODE_LENGTH = 6
+MAX_OTP_ATTEMPTS = 5
 
 
 def generate_code() -> str:
@@ -61,21 +62,54 @@ def latest_active_code(user: User) -> EmailVerificationCode | None:
 
 
 def confirm_email_with_code(*, user: User, code: str) -> tuple[bool, str]:
-    """Validate an OTP and activate the account. Returns (ok, message)."""
-    verification = (
-        EmailVerificationCode.objects.filter(user=user, code=code.strip())
-        .order_by("-created_at")
-        .first()
-    )
-    if not verification:
-        return False, "That code is not valid for this account."
-    if verification.is_consumed:
-        return False, "This code has already been used."
-    if verification.is_expired:
-        return False, "This code has expired. Request a new one."
+    """Validate an OTP and activate the account. Returns (ok, message).
 
-    verification.consumed_at = timezone.now()
-    verification.save(update_fields=["consumed_at"])
+    Enforces single-use status, expiration, and a 5-attempt brute-force limit.
+    Uses constant-time comparison to prevent timing attacks.
+    """
+    from django.core.cache import cache
+
+    code_str = code.strip()
+    active_code = latest_active_code(user)
+
+    if not active_code:
+        has_expired = EmailVerificationCode.objects.filter(
+            user=user, expires_at__lte=timezone.now()
+        ).exists()
+        if has_expired:
+            return False, "This code has expired. Request a new one."
+        has_consumed = EmailVerificationCode.objects.filter(
+            user=user, consumed_at__isnull=False
+        ).exists()
+        if has_consumed:
+            return False, "This code has already been used."
+        return False, "No active verification code found for this account. Request a new one."
+
+    # Check attempt limit for this active OTP
+    cache_key = f"otp_attempts_{active_code.id}"
+    attempts = cache.get(cache_key, 0)
+    if attempts >= MAX_OTP_ATTEMPTS:
+        active_code.consumed_at = timezone.now()
+        active_code.save(update_fields=["consumed_at"])
+        cache.delete(cache_key)
+        return False, "Too many failed attempts. This code has been deactivated. Please request a new verification code."
+
+    # Constant-time comparison to prevent timing side channels
+    if not secrets.compare_digest(active_code.code, code_str):
+        attempts += 1
+        cache.set(cache_key, attempts, timeout=int(active_code.ttl_minutes * 60))
+        remaining = MAX_OTP_ATTEMPTS - attempts
+        if remaining <= 0:
+            active_code.consumed_at = timezone.now()
+            active_code.save(update_fields=["consumed_at"])
+            cache.delete(cache_key)
+            return False, "Too many failed attempts. This code has been deactivated. Please request a new verification code."
+        return False, f"Incorrect verification code. You have {remaining} attempt(s) remaining."
+
+    # Code matched! Mark consumed and clear attempts cache
+    active_code.consumed_at = timezone.now()
+    active_code.save(update_fields=["consumed_at"])
+    cache.delete(cache_key)
 
     user.is_active = True
     user.save(update_fields=["is_active"])

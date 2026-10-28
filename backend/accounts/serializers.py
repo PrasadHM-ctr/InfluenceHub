@@ -95,7 +95,7 @@ class VerifyEmailSerializer(serializers.Serializer):
             ).exists()
             if is_expired:
                 raise serializers.ValidationError({"code": "This code has expired. Request a new one."})
-            raise serializers.ValidationError({"code": "That verification code is not correct."})
+            raise serializers.ValidationError({"code": local_msg or "That verification code is not correct."})
 
         user.is_active = True
         user.save(update_fields=["is_active"])
