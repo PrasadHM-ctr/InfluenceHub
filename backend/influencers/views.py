@@ -30,21 +30,25 @@ class InfluencerRegisterView(APIView):
         if serializer.is_valid():
             serializer.save()
 
+            verification_required = serializer.context.get("verification_required", True)
             email_sent = serializer.context.get("email_sent", True)
-            message = (
-                "Influencer registered successfully! Verification code sent to your email."
-                if email_sent
-                else (
-                    "Influencer registered successfully, but the verification email "
-                    "could not be sent. Please use Resend on the next screen."
+            if verification_required:
+                message = (
+                    "Influencer registered successfully! Verification code sent to your email."
+                    if email_sent
+                    else (
+                        "Influencer registered successfully, but the verification email "
+                        "could not be sent. Please use Resend on the next screen."
+                    )
                 )
-            )
+            else:
+                message = "Influencer registered successfully! You can sign in now."
 
             return Response(
                 {
                     "message": message,
                     "email": serializer.validated_data["email"],
-                    "verification_required": True,
+                    "verification_required": verification_required,
                     "email_sent": email_sent,
                 },
                 status=status.HTTP_201_CREATED,
@@ -62,7 +66,10 @@ class InfluencerProfileView(APIView):
         try:
             influencer = InfluencerProfile.objects.get(user=request.user)
 
-            serializer = InfluencerProfileSerializer(influencer)
+            serializer = InfluencerProfileSerializer(
+                influencer,
+                context={"request": request},
+            )
 
             return Response(serializer.data)
 
@@ -91,6 +98,7 @@ class InfluencerProfileView(APIView):
                 influencer,
                 data=request.data,
                 partial=True,
+                context={"request": request},
             )
 
             if serializer.is_valid():

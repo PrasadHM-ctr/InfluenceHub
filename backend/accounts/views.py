@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import User
 from rest_framework import exceptions, generics, status
 from rest_framework.exceptions import AuthenticationFailed
@@ -30,17 +31,22 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        verification_required = serializer.context.get("verification_required", True)
         email_sent = serializer.context.get("email_sent", True)
-        message = (
-            "Account created. A verification code was sent to your email."
-            if email_sent
-            else "Account created, but the verification email could not be sent. Please use Resend on the next screen."
-        )
+        if verification_required:
+            message = (
+                "Account created. A verification code was sent to your email."
+                if email_sent
+                else "Account created, but the verification email could not be sent. Please use Resend on the next screen."
+            )
+        else:
+            message = "Account created successfully. You can sign in now."
+
         return Response(
             {
                 "message": message,
                 "email": user.email,
-                "verification_required": True,
+                "verification_required": verification_required,
                 "email_sent": email_sent,
             },
             status=status.HTTP_201_CREATED,
@@ -59,28 +65,50 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         identifier = serializer.validated_data["username"]
+        verification_required = getattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
+        tokens = None
         try:
             tokens = cognito.login(identifier=identifier, password=serializer.validated_data["password"])
         except cognito.CognitoError as error:
-            local_user = (
-                User.objects.filter(username__iexact=identifier, is_active=True).first()
-                or User.objects.filter(email__iexact=identifier, is_active=True).first()
-            )
-            if local_user and local_user.check_password(serializer.validated_data["password"]):
-                role = getattr(getattr(local_user, "userrole", None), "role", "")
-                tokens = {
-                    "access": f"fake.{local_user.pk}.token",
-                    "refresh": f"fake-refresh.{local_user.pk}",
-                    "expires_in": 3600,
-                }
-                return Response({**tokens, "role": role}, status=status.HTTP_200_OK)
-            return Response({"detail": str(error)}, status=status.HTTP_401_UNAUTHORIZED)
+            if not verification_required and getattr(error, "aws_code", "") == "UserNotConfirmedException":
+                try:
+                    target_email = cognito._resolve_login_email(identifier)
+                    cognito.admin_confirm_user(email=target_email)
+                    tokens = cognito.login(identifier=identifier, password=serializer.validated_data["password"])
+                except Exception:
+                    tokens = None
+            if not tokens:
+                local_user = (
+                    User.objects.filter(username__iexact=identifier).first()
+                    or User.objects.filter(email__iexact=identifier).first()
+                )
+                if local_user and local_user.check_password(serializer.validated_data["password"]):
+                    if not local_user.is_active:
+                        if not verification_required:
+                            local_user.is_active = True
+                            local_user.save(update_fields=["is_active"])
+                        else:
+                            return Response({"detail": "Please verify your email address before signing in."}, status=status.HTTP_401_UNAUTHORIZED)
+                    role = getattr(getattr(local_user, "userrole", None), "role", "")
+                    tokens = {
+                        "access": f"fake.{local_user.pk}.token",
+                        "refresh": f"fake-refresh.{local_user.pk}",
+                        "expires_in": 3600,
+                    }
+                    return Response({**tokens, "role": role}, status=status.HTTP_200_OK)
+                return Response({"detail": str(error)}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as error:
             local_user = (
-                User.objects.filter(username__iexact=identifier, is_active=True).first()
-                or User.objects.filter(email__iexact=identifier, is_active=True).first()
+                User.objects.filter(username__iexact=identifier).first()
+                or User.objects.filter(email__iexact=identifier).first()
             )
             if local_user and local_user.check_password(serializer.validated_data["password"]):
+                if not local_user.is_active:
+                    if not verification_required:
+                        local_user.is_active = True
+                        local_user.save(update_fields=["is_active"])
+                    else:
+                        return Response({"detail": "Please verify your email address before signing in."}, status=status.HTTP_401_UNAUTHORIZED)
                 role = getattr(getattr(local_user, "userrole", None), "role", "")
                 tokens = {
                     "access": f"fake.{local_user.pk}.token",
@@ -325,4 +353,18 @@ class MeView(APIView):
                 "is_active": request.user.is_active,
                 "pending_verification": not request.user.is_active or pending,
             }
+        )
+
+class AuthConfigView(APIView):
+    """Public endpoint returning server-controlled authentication settings."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        return Response(
+            {
+                "email_verification_required": getattr(settings, "EMAIL_VERIFICATION_REQUIRED", True),
+            },
+            status=status.HTTP_200_OK,
         )

@@ -136,6 +136,11 @@ export function BusinessRegistrationForm() {
   const onSubmit = async (values: BusinessValues) => {
     try {
       const result = await api.registerBusiness(values);
+      if (result.verification_required === false) {
+        toast.success("Account created successfully! Please sign in.");
+        router.push("/business/login");
+        return;
+      }
       if (result.email_sent === false) {
         toast.warning("Account created, but verification email could not be sent. Please use Resend code on the next screen.");
       } else {
@@ -181,6 +186,11 @@ export function InfluencerRegistrationForm() {
   const onSubmit = async (values: InfluencerValues) => {
     try {
       const result = await api.registerInfluencer(values);
+      if (result.verification_required === false) {
+        toast.success("Account created successfully! Please sign in.");
+        router.push("/influencer/login");
+        return;
+      }
       if (result.email_sent === false) {
         toast.warning("Account created, but verification email could not be sent. Please use Resend code on the next screen.");
       } else {

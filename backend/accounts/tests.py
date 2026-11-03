@@ -341,3 +341,50 @@ class EmailVerificationAndUploadTests(APITestCase):
         fake_exe = SimpleUploadedFile("dangerous.exe", b"binary content", content_type="application/octet-stream")
         res = self.client.put("/api/business/profile/", {"logo": fake_exe}, format="multipart")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+@override_settings(CACHES=TEST_CACHES, EMAIL_VERIFICATION_REQUIRED=False)
+class ProductionVerificationDisabledTests(APITestCase):
+    def setUp(self):
+        _clear_fake_pool()
+
+    def test_auth_config_reflects_disabled_verification(self):
+        response = self.client.get("/api/auth/config/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["email_verification_required"])
+
+    def test_business_signup_creates_active_user_and_cognito_confirmed(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "brand-no-otp", "email": "brand-no-otp@example.com"}
+        response = self.client.post("/api/business/register/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(response.data["verification_required"])
+        self.assertIn("sign in", response.data["message"].lower())
+
+        user = User.objects.get(email=payload["email"])
+        self.assertTrue(user.is_active)
+        record = _FAKE_USERS[payload["email"]]
+        self.assertTrue(record["confirmed"])
+
+        # Immediate login succeeds without needing verify-email
+        login = self.client.post("/api/login/", {"username": payload["username"], "password": payload["password"]}, format="json")
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        self.assertIn("access", login.data)
+        self.assertEqual(login.data["role"], "business")
+
+    def test_influencer_signup_creates_active_user_and_can_login_immediately(self):
+        payload = {**INFLUENCER_PAYLOAD, "username": "creator-no-otp", "email": "creator-no-otp@example.com"}
+        response = self.client.post("/api/influencer/register/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(response.data["verification_required"])
+        self.assertIn("sign in", response.data["message"].lower())
+
+        user = User.objects.get(email=payload["email"])
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.influencerprofile.email_verified)
+        record = _FAKE_USERS[payload["email"]]
+        self.assertTrue(record["confirmed"])
+
+        login = self.client.post("/api/login/", {"username": payload["username"], "password": payload["password"]}, format="json")
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        self.assertIn("access", login.data)
+        self.assertEqual(login.data["role"], "influencer")

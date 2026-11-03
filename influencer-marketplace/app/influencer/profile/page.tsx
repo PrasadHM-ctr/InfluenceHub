@@ -26,7 +26,13 @@ function ProfileImageCard({ profile }: { profile: Influencer }) {
       form.append("profile_image", file);
       return api.updateInfluencerProfile(form);
     },
-    onSuccess: () => { toast.success("Profile image updated."); client.invalidateQueries({ queryKey: ["influencer-profile"] }); },
+    onSuccess: (updated) => {
+      toast.success("Profile image updated.");
+      if (updated) {
+        client.setQueryData(["influencer-profile"], updated);
+      }
+      client.invalidateQueries({ queryKey: ["influencer-profile"] });
+    },
     onError: (error) => toast.error(getApiError(error)),
   });
 

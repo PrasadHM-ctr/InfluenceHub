@@ -215,6 +215,12 @@ CAMPAIGN_ATTACHMENT_MAX_BYTES = env_int("CAMPAIGN_ATTACHMENT_MAX_BYTES", 10 * 10
 CHAT_MAX_ATTACHMENTS_PER_CONVERSATION = env_int("CHAT_MAX_ATTACHMENTS_PER_CONVERSATION", 200)
 EMAIL_VERIFICATION_CODE_TTL_MINUTES = env_int("EMAIL_VERIFICATION_CODE_TTL_MINUTES", 15)
 
+# Email verification requirement:
+# - Local development: defaults to True to enforce Gmail OTP / console verification.
+# - Production (Render): set EMAIL_VERIFICATION_REQUIRED=False in environment variables
+#   to disable email OTP verification and allow immediate registration and sign-in.
+EMAIL_VERIFICATION_REQUIRED = env_bool("EMAIL_VERIFICATION_REQUIRED", "True")
+
 # The Next development server may use localhost or 127.0.0.1 and choose a
 # different free port. Permit local development, while deployed origins can be
 # supplied as a comma-separated CORS_ALLOWED_ORIGINS environment variable.

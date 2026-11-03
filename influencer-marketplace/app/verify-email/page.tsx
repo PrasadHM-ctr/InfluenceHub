@@ -15,6 +15,7 @@ function VerifyEmailInner() {
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [verified, setVerified] = useState(false);
+  const [verificationNotRequired, setVerificationNotRequired] = useState(false);
   // The signup form passes the account role so verified users land on the
   // correct sign-in page (influencers must not be sent to /business/login).
   const [loginPath, setLoginPath] = useState("/business/login");
@@ -22,6 +23,13 @@ function VerifyEmailInner() {
   useEffect(() => {
     setEmail(params.get("email") ?? params.get("username") ?? "");
     setLoginPath(params.get("role") === "influencer" ? "/influencer/login" : "/business/login");
+    api.getAuthConfig()
+      .then((cfg) => {
+        if (cfg.email_verification_required === false) {
+          setVerificationNotRequired(true);
+        }
+      })
+      .catch(() => {});
   }, [params]);
 
   const submit = async (event: React.FormEvent) => {
@@ -81,7 +89,19 @@ function VerifyEmailInner() {
               : "We emailed a 6-digit code to your inbox. Click \"Resend code\" if it hasn't arrived."}
           </p>
 
-          {!verified && (
+          {verificationNotRequired ? (
+            <div className="mt-6 space-y-5">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Email verification is not required in this environment. Your account is already active and ready to use.
+              </p>
+              <Link
+                href={loginPath}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-violet-500"
+              >
+                Sign in to your account <ArrowRight size={16} />
+              </Link>
+            </div>
+          ) : !verified && (
             <form onSubmit={submit} className="mt-6 space-y-5">
               <label className="block">
                 <span className="mb-1.5 block text-sm font-bold text-slate-700 dark:text-slate-200">Account email</span>

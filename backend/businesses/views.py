@@ -97,23 +97,25 @@ class BusinessRegisterView(APIView):
 
             serializer.save()
 
-            # Report the real email-delivery result instead of assuming SES
-            # accepted the message.
+            verification_required = serializer.context.get("verification_required", True)
             email_sent = serializer.context.get("email_sent", True)
-            message = (
-                "Business registered successfully! Verification code sent to your email."
-                if email_sent
-                else (
-                    "Business registered successfully, but the verification email "
-                    "could not be sent. Please use Resend on the next screen."
+            if verification_required:
+                message = (
+                    "Business registered successfully! Verification code sent to your email."
+                    if email_sent
+                    else (
+                        "Business registered successfully, but the verification email "
+                        "could not be sent. Please use Resend on the next screen."
+                    )
                 )
-            )
+            else:
+                message = "Business registered successfully! You can sign in now."
 
             return Response(
                 {
                     "message": message,
                     "email": serializer.validated_data["email"],
-                    "verification_required": True,
+                    "verification_required": verification_required,
                     "email_sent": email_sent,
                 },
                 status=status.HTTP_201_CREATED,
@@ -147,7 +149,8 @@ class BusinessProfileView(APIView):
             )
 
             serializer = BusinessProfileSerializer(
-                business
+                business,
+                context={"request": request},
             )
 
             return Response(
@@ -184,6 +187,7 @@ class BusinessProfileView(APIView):
                 business,
                 data=request.data,
                 partial=True,
+                context={"request": request},
             )
 
             if serializer.is_valid():

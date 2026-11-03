@@ -25,7 +25,13 @@ function LogoCard({ profile }: { profile: BusinessProfile }) {
       form.append("logo", file);
       return api.updateBusinessProfile(form);
     },
-    onSuccess: () => { toast.success("Business logo updated."); client.invalidateQueries({ queryKey: ["business-profile"] }); },
+    onSuccess: (updated) => {
+      toast.success("Business logo updated.");
+      if (updated) {
+        client.setQueryData(["business-profile"], updated);
+      }
+      client.invalidateQueries({ queryKey: ["business-profile"] });
+    },
     onError: (error) => toast.error(getApiError(error)),
   });
 

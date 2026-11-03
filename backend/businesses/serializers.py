@@ -52,12 +52,14 @@ class BusinessRegisterSerializer(serializers.Serializer):
     @transaction.atomic
     def create(self, validated_data):
 
-        # Account stays inactive until the emailed code is confirmed.
+        from django.conf import settings
+        verification_required = getattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
+        # Account stays inactive until the emailed code is confirmed, unless verification is disabled.
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data["email"],
             password=validated_data["password"],
-            is_active=False,
+            is_active=not verification_required,
         )
         # Cognito owns credentials from here on - PostgreSQL keeps no usable
         # password, so a database leak can never expose a login.
@@ -90,9 +92,15 @@ class BusinessRegisterSerializer(serializers.Serializer):
         except cognito.CognitoError as error:
             logger.info("Cognito sign_up note: %s", error)
 
-        code_obj, sent = issue_verification_code(user=user)
-        self.context["email_sent"] = sent or cognito_ok
-        self.context["verification_code"] = code_obj.code
+        if not verification_required:
+            cognito.admin_confirm_user(email=user.email)
+            self.context["verification_required"] = False
+            self.context["email_sent"] = False
+        else:
+            code_obj, sent = issue_verification_code(user=user)
+            self.context["verification_required"] = True
+            self.context["email_sent"] = sent or cognito_ok
+            self.context["verification_code"] = code_obj.code
 
         return business
 

@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    AuthConfigView,
     ConfirmForgotPasswordView,
     ForgotPasswordView,
     LoginView,
@@ -11,6 +12,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("auth/config/", AuthConfigView.as_view(), name="auth-config"),
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", LoginView.as_view(), name="login"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),

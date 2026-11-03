@@ -12,7 +12,11 @@ from django.urls import path, include
 
 
 def health_check(request):
-    return JsonResponse({"status": "ok", "app": "InfluenceHub"})
+    return JsonResponse({
+        "status": "ok",
+        "app": "InfluenceHub",
+        "email_verification_required": getattr(settings, "EMAIL_VERIFICATION_REQUIRED", True),
+    })
 
 
 def root_view(request):

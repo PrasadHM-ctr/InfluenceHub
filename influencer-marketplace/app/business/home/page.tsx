@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Bell, BriefcaseBusiness, CheckCircle2, CircleAlert, Clock3, Inbox, LayoutDashboard, MessageCircle, Search, Send, UsersRound } from "lucide-react";
 import { HomeShell } from "@/components/home/home-shell";
 import { ActionCard, HomeLoadingSkeleton, MetricCard, ProgressCard, SectionHeader, WelcomeHero } from "@/components/home/home-ui";
+import { useAuth } from "@/context/auth-context";
 import { api } from "@/services/api";
 import { chatApi } from "@/services/chat";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -17,10 +18,27 @@ function completion(profile?: { company_name: string; industry: string; website?
 }
 
 export default function BusinessHomePage() {
-  const profile = useQuery({ queryKey: ["business-profile"], queryFn: api.getBusinessProfile });
-  const stats = useQuery({ queryKey: ["business-dashboard"], queryFn: api.getBusinessDashboard });
-  const campaigns = useQuery({ queryKey: ["campaigns"], queryFn: () => api.getCampaigns() });
-  const conversations = useQuery({ queryKey: ["chat-conversations"], queryFn: chatApi.getConversations });
+  const auth = useAuth();
+  const profile = useQuery({
+    queryKey: ["business-profile"],
+    queryFn: api.getBusinessProfile,
+    enabled: auth.isReady && auth.role === "business",
+  });
+  const stats = useQuery({
+    queryKey: ["business-dashboard"],
+    queryFn: api.getBusinessDashboard,
+    enabled: auth.isReady && auth.role === "business",
+  });
+  const campaigns = useQuery({
+    queryKey: ["campaigns"],
+    queryFn: () => api.getCampaigns(),
+    enabled: auth.isReady && auth.role === "business",
+  });
+  const conversations = useQuery({
+    queryKey: ["chat-conversations"],
+    queryFn: chatApi.getConversations,
+    enabled: auth.isReady && auth.role === "business",
+  });
   const recentCampaigns = (campaigns.data ?? []).slice(0, 4);
   const recentMessages = (conversations.data ?? []).slice(0, 4);
   const unreadMessages = useMemo(() => (conversations.data ?? []).reduce((total, conversation) => total + conversation.unread_count, 0), [conversations.data]);

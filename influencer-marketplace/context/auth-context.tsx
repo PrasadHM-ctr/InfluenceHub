@@ -40,7 +40,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const token = window.localStorage.getItem(ACCESS);
-    const savedRole = window.localStorage.getItem(ROLE);
 
     if (!token) {
       setRole(null);
@@ -48,19 +47,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (isValidRole(savedRole)) {
-      setRole(savedRole);
-    }
-
-    // Verify token with backend /api/me/ and synchronize the real role
+    // Verify token with backend /api/me/ FIRST and synchronize the real role.
+    // Only after the backend confirms the role do we set isReady and auth.role.
+    // This prevents stale-localStorage roles from gate-keeping protected pages.
     api
       .getMe()
       .then((me) => {
         if (me && isValidRole(me.role)) {
-          if (me.role !== savedRole) {
-            window.localStorage.setItem(ROLE, me.role);
-            setRole(me.role);
-          }
+          window.localStorage.setItem(ROLE, me.role);
+          setRole(me.role);
         }
       })
       .catch((err) => {
@@ -72,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsReady(true);
       });
   }, []);
+
 
   return <AuthContext.Provider value={{ role, isReady, signIn, signOut }}>{children}</AuthContext.Provider>;
 }

@@ -15,6 +15,9 @@ the form ``fake.<user_pk>`` which config.cognito_auth understands.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -168,6 +171,24 @@ def sign_up(*, email: str, password: str, role: str) -> None:
         )
     except Exception as error:  # noqa: BLE001
         raise _aws_error(error) from error
+
+
+def admin_confirm_user(*, email: str) -> None:
+    """Confirm a user's account in Cognito without requiring an emailed OTP.
+    Used when EMAIL_VERIFICATION_REQUIRED is False."""
+    email_norm = email.strip().lower()
+    if settings.COGNITO_FAKE:
+        record = _FAKE_USERS.get(email_norm)
+        if record:
+            record["confirmed"] = True
+        return
+    try:
+        _client().admin_confirm_sign_up(
+            UserPoolId=settings.COGNITO_USER_POOL_ID,
+            Username=email_norm,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning("Cognito admin_confirm_sign_up note for %s: %s", email_norm, error)
 
 
 def confirm_sign_up(*, email: str, code: str) -> None:

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, BriefcaseBusiness, CheckCircle2, Clock3, IndianRupee, Inbox, MessageCircle, TrendingUp, UserRound, UsersRound } from "lucide-react";
 import { HomeShell } from "@/components/home/home-shell";
 import { ActionCard, HomeLoadingSkeleton, MetricCard, ProgressCard, SectionHeader, WelcomeHero } from "@/components/home/home-ui";
+import { useAuth } from "@/context/auth-context";
 import { api } from "@/services/api";
 import { chatApi } from "@/services/chat";
 import { formatDate, formatFollowers, formatMoney } from "@/lib/utils";
@@ -17,8 +18,17 @@ function completion(profile?: { full_name: string; bio?: string; category: strin
 }
 
 export default function InfluencerHomePage() {
-  const profile = useQuery({ queryKey: ["influencer-profile"], queryFn: api.getInfluencerProfile });
-  const campaigns = useQuery({ queryKey: ["campaigns"], queryFn: () => api.getCampaigns() });
+  const auth = useAuth();
+  const profile = useQuery({
+    queryKey: ["influencer-profile"],
+    queryFn: api.getInfluencerProfile,
+    enabled: auth.isReady && auth.role === "influencer",
+  });
+  const campaigns = useQuery({
+    queryKey: ["campaigns"],
+    queryFn: () => api.getCampaigns(),
+    enabled: auth.isReady && auth.role === "influencer",
+  });
   const conversations = useQuery({ queryKey: ["chat-conversations"], queryFn: chatApi.getConversations });
   const data = campaigns.data ?? [];
   const pending = data.filter((campaign) => campaign.status === "Pending");
