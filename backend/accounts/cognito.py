@@ -133,7 +133,7 @@ def _client():
     return boto3.client(
         "cognito-idp",
         region_name=settings.COGNITO_REGION,
-        config=Config(connect_timeout=6, read_timeout=10, retries={"max_attempts": 2}),
+        config=Config(connect_timeout=3, read_timeout=4, retries={"max_attempts": 1}),
     )
 
 

@@ -169,6 +169,12 @@ def _send_code_email(user: User, verification: EmailVerificationCode) -> bool:
         "safely ignore this email.\n\n"
         "— The InfluenceHub team"
     )
+    # Guard: if SMTP backend is selected without a configured EMAIL_HOST, skip synchronous hang
+    backend_name = str(getattr(settings, "EMAIL_BACKEND", ""))
+    if "smtp" in backend_name.lower() and not str(getattr(settings, "EMAIL_HOST", "")).strip():
+        logger.warning("EMAIL_HOST is not configured; skipping synchronous SMTP connection.")
+        return False
+
     try:
         sent = send_mail(
             subject=subject,

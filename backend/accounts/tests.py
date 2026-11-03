@@ -388,3 +388,34 @@ class ProductionVerificationDisabledTests(APITestCase):
         self.assertEqual(login.status_code, status.HTTP_200_OK)
         self.assertIn("access", login.data)
         self.assertEqual(login.data["role"], "influencer")
+
+    def test_blank_email_host_smtp_does_not_hang(self):
+        from accounts.services import _send_code_email
+        from accounts.models import EmailVerificationCode
+        from django.utils import timezone
+
+        user = User.objects.create_user(username="smtp_blank_user", email="smtp_blank@example.com")
+        code = EmailVerificationCode.objects.create(
+            user=user,
+            code="123456",
+            expires_at=timezone.now() + timezone.timedelta(minutes=15),
+        )
+        with self.settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend", EMAIL_HOST=""):
+            # Must return False immediately without raising or hanging
+            sent = _send_code_email(user, code)
+            self.assertFalse(sent)
+
+    def test_duplicate_registration_returns_clean_error(self):
+        payload = {**BUSINESS_PAYLOAD, "username": "brand-dup-test", "email": "brand-dup-test@example.com"}
+        res1 = self.client.post("/api/business/register/", payload, format="json")
+        self.assertEqual(res1.status_code, status.HTTP_201_CREATED)
+
+        # Retry with identical email
+        res2 = self.client.post("/api/business/register/", {**payload, "username": "brand-dup-diff"}, format="json")
+        self.assertEqual(res2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists", str(res2.data.get("email", [])))
+
+        # Retry with identical username
+        res3 = self.client.post("/api/business/register/", {**payload, "email": "brand-dup-diff@example.com"}, format="json")
+        self.assertEqual(res3.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists", str(res3.data.get("username", [])))

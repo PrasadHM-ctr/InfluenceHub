@@ -13,8 +13,15 @@ import type {
   Paginated,
 } from "@/types";
 
+const rawBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+const normalizedBaseUrl = rawBaseUrl.endsWith("/api")
+  ? rawBaseUrl
+  : rawBaseUrl.endsWith("/")
+    ? `${rawBaseUrl}api`
+    : `${rawBaseUrl}/api`;
+
 export const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api",
+  baseURL: normalizedBaseUrl,
   timeout: 30000,
 });
 
@@ -151,7 +158,7 @@ apiClient.interceptors.response.use(
 export function getApiError(error: unknown) {
   if (error instanceof AxiosError) {
     if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
-      return "The server took too long to respond. Please try again.";
+      return "The server took too long to respond. If your registration already processed, you can try signing in, or try again in a moment.";
     }
     const data = error.response?.data;
     if (typeof data === "string") return data;

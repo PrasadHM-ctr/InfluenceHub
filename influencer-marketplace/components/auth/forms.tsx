@@ -148,7 +148,25 @@ export function BusinessRegistrationForm() {
       }
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}&role=business`);
     } catch (error) {
-      toast.error(getApiError(error));
+      const msg = getApiError(error);
+      if (/already exists/i.test(msg)) {
+        toast.error(msg, {
+          description: "An account with these details was already registered.",
+          action: {
+            label: "Sign in",
+            onClick: () => router.push("/business/login"),
+          },
+        });
+      } else if (/server took too long/i.test(msg)) {
+        toast.error(msg, {
+          action: {
+            label: "Try sign in",
+            onClick: () => router.push("/business/login"),
+          },
+        });
+      } else {
+        toast.error(msg);
+      }
     }
   };
   return (
@@ -198,7 +216,25 @@ export function InfluencerRegistrationForm() {
       }
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}&role=influencer`);
     } catch (error) {
-      toast.error(getApiError(error));
+      const msg = getApiError(error);
+      if (/already exists/i.test(msg)) {
+        toast.error(msg, {
+          description: "An account with these details was already registered.",
+          action: {
+            label: "Sign in",
+            onClick: () => router.push("/influencer/login"),
+          },
+        });
+      } else if (/server took too long/i.test(msg)) {
+        toast.error(msg, {
+          action: {
+            label: "Try sign in",
+            onClick: () => router.push("/influencer/login"),
+          },
+        });
+      } else {
+        toast.error(msg);
+      }
     }
   };
   return (

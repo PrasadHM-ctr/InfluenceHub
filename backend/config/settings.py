@@ -216,10 +216,12 @@ CHAT_MAX_ATTACHMENTS_PER_CONVERSATION = env_int("CHAT_MAX_ATTACHMENTS_PER_CONVER
 EMAIL_VERIFICATION_CODE_TTL_MINUTES = env_int("EMAIL_VERIFICATION_CODE_TTL_MINUTES", 15)
 
 # Email verification requirement:
-# - Local development: defaults to True to enforce Gmail OTP / console verification.
-# - Production (Render): set EMAIL_VERIFICATION_REQUIRED=False in environment variables
-#   to disable email OTP verification and allow immediate registration and sign-in.
-EMAIL_VERIFICATION_REQUIRED = env_bool("EMAIL_VERIFICATION_REQUIRED", "True")
+# - Local development: defaults to True (enforcing local Gmail OTP / console verification).
+# - Production (Render / live): defaults to False so users register & sign in immediately without OTP.
+# - Can still be explicitly forced in any environment via EMAIL_VERIFICATION_REQUIRED=True / False.
+_is_prod = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") or not DEBUG)
+_default_email_verification = "False" if _is_prod else "True"
+EMAIL_VERIFICATION_REQUIRED = env_bool("EMAIL_VERIFICATION_REQUIRED", _default_email_verification)
 
 # The Next development server may use localhost or 127.0.0.1 and choose a
 # different free port. Permit local development, while deployed origins can be
@@ -337,6 +339,7 @@ EMAIL_BACKEND = os.getenv(
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", "True")
+EMAIL_TIMEOUT = env_int("EMAIL_TIMEOUT", 4)  # Hard 4s limit on SMTP socket connections
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 _default_sender = (
