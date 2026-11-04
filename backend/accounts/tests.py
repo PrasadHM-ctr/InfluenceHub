@@ -250,6 +250,8 @@ class EmailVerificationAndUploadTests(APITestCase):
         self.assertIn("expired", str(res.data).lower())
 
     def test_otp_attempt_limit_and_lockout(self):
+        from django.core.cache import cache
+        cache.clear()
         payload = {**BUSINESS_PAYLOAD, "username": "lockout-biz", "email": "lockout-biz@example.com"}
         self.client.post("/api/business/register/", payload, format="json")
         user = User.objects.get(email=payload["email"])

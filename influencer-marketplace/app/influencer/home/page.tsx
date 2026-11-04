@@ -29,7 +29,11 @@ export default function InfluencerHomePage() {
     queryFn: () => api.getCampaigns(),
     enabled: auth.isReady && auth.role === "influencer",
   });
-  const conversations = useQuery({ queryKey: ["chat-conversations"], queryFn: chatApi.getConversations });
+  const conversations = useQuery({
+    queryKey: ["chat-conversations"],
+    queryFn: chatApi.getConversations,
+    enabled: auth.isReady && auth.role === "influencer",
+  });
   const data = campaigns.data ?? [];
   const pending = data.filter((campaign) => campaign.status === "Pending");
   const accepted = data.filter((campaign) => campaign.status === "Accepted");

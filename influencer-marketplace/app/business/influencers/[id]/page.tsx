@@ -9,6 +9,7 @@ import { z } from "zod";
 import { useState } from "react";
 import { ArrowLeft, Camera as Instagram, ExternalLink, LoaderCircle, MapPin, Paperclip, Send, UsersRound } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/context/auth-context";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { api, getApiError } from "@/services/api";
 import { ErrorState, LoadingState } from "@/components/ui/state";
@@ -20,7 +21,12 @@ type ProposalValues = z.infer<typeof proposalSchema>;
 export default function InfluencerDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const creator = useQuery({ queryKey: ["influencer", params.id], queryFn: () => api.getInfluencer(params.id), enabled: Boolean(params.id) });
+  const auth = useAuth();
+  const creator = useQuery({
+    queryKey: ["influencer", params.id],
+    queryFn: () => api.getInfluencer(params.id),
+    enabled: auth.isReady && (auth.role === "business" || auth.role === "owner") && Boolean(params.id),
+  });
   const form = useForm<ProposalValues>({ resolver: zodResolver(proposalSchema), defaultValues: { title: "", message: "", budget: 0 } });
   const [attachment, setAttachment] = useState<File | null>(null);
   const campaign = useMutation({ mutationFn: (payload: Parameters<typeof api.createCampaign>[0]) => api.createCampaign(payload), onSuccess: () => { toast.success("Campaign proposal sent."); router.push("/business/dashboard"); }, onError: (error) => toast.error(getApiError(error)) });

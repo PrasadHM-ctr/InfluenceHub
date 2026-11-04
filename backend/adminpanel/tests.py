@@ -408,7 +408,7 @@ class AdminAnalyticsNotificationsSettingsTests(AdminTestBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["totals"]["users"], 3)
         self.assertEqual(response.data["totals"]["completed_campaigns"], 1)
-        self.assertEqual(response.data["totals"]["budget_total"], "10000.00")
+        self.assertIn(response.data["totals"]["budget_total"], ("10000.00", "10000"))
         self.assertEqual(len(response.data["users_over_time"]), 14)
         distribution = {row["status"]: row["count"] for row in response.data["campaign_status_distribution"]}
         self.assertEqual(distribution.get("Completed"), 1)

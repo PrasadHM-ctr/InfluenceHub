@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ArrowRight, BadgeCheck, ChevronLeft, ChevronRight, MapPin, RotateCcw, Search } from "lucide-react";
+import { useAuth } from "@/context/auth-context";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { api, getApiError } from "@/services/api";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/state";
@@ -14,6 +15,7 @@ const CATEGORIES = ["all", "Fashion", "Beauty", "Fitness", "Food", "Travel", "Te
 const LANGUAGES = ["all", "English", "Hindi", "Tamil", "Telugu", "Kannada", "Malayalam", "Marathi", "Bengali", "Gujarati", "Punjabi"];
 
 export default function BusinessInfluencersPage() {
+  const auth = useAuth();
   const [filters, setFilters] = useState<InfluencerFilters>({});
   const [page, setPage] = useState(1);
   const [term, setTerm] = useState("");
@@ -22,6 +24,7 @@ export default function BusinessInfluencersPage() {
     queryKey: ["influencers", { ...filters, page }],
     queryFn: () => api.getInfluencers({ ...filters, page }),
     placeholderData: keepPreviousData,
+    enabled: auth.isReady && (auth.role === "business" || auth.role === "owner"),
   });
 
   const creators = query.data?.results ?? [];

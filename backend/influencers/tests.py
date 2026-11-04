@@ -361,3 +361,129 @@ class InfluencerProfileImageTests(APITestCase):
         )
         after = self.client.get("/api/influencer/profile/").data["completion_percentage"]
         self.assertGreater(after, before, "completion_percentage must increase after image upload")
+
+
+@override_settings(CACHES=TEST_CACHES)
+class InfluencerDirectoryAccessMatrixTests(APITestCase):
+    """
+    Test matrix for /api/influencers/ and /api/influencers/<id>/ across all 4 access conditions:
+    1. Authenticated business account -> HTTP 200 OK
+    2. Authenticated influencer account -> HTTP 403 Forbidden
+    3. Unauthenticated caller -> HTTP 401 Unauthorized
+    4. Authenticated unauthorized account (no business profile) -> HTTP 403 Forbidden
+    Additional condition:
+    5. Authenticated owner / staff account -> HTTP 200 OK
+    """
+
+    def setUp(self):
+        _FAKE_USERS.clear()
+        # Create influencer
+        self.influencer_user = User.objects.create_user(
+            username="matrix-influencer",
+            email="matrix-influencer@example.com",
+            password="safe-password-123",
+            is_active=True,
+        )
+        UserRole.objects.create(user=self.influencer_user, role="influencer")
+        self.influencer_profile = InfluencerProfile.objects.create(
+            user=self.influencer_user,
+            full_name="Matrix Influencer",
+            category="Tech",
+            language="English",
+            followers=15000,
+            city="Bengaluru",
+            state="Karnataka",
+            email_verified=True,
+        )
+
+        # Create business
+        from businesses.models import BusinessProfile
+        self.business_user = User.objects.create_user(
+            username="matrix-business",
+            email="matrix-business@example.com",
+            password="safe-password-123",
+            is_active=True,
+        )
+        UserRole.objects.create(user=self.business_user, role="business")
+        self.business_profile = BusinessProfile.objects.create(
+            user=self.business_user,
+            company_name="Matrix Tech Brands",
+            industry="Technology",
+            phone="9876543210",
+            city="Bengaluru",
+            state="Karnataka",
+        )
+
+        # Create user without role/profile
+        self.plain_user = User.objects.create_user(
+            username="matrix-plain",
+            email="matrix-plain@example.com",
+            password="safe-password-123",
+            is_active=True,
+        )
+
+        # Create owner user
+        self.owner_user = User.objects.create_user(
+            username="matrix-owner",
+            email="matrix-owner@example.com",
+            password="safe-password-123",
+            is_active=True,
+        )
+        UserRole.objects.create(user=self.owner_user, role="owner")
+
+    def _login(self, username):
+        res = self.client.post("/api/login/", {"username": username, "password": "safe-password-123"}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+        return res.data
+
+    def test_condition_1_authenticated_business_can_browse_directory(self):
+        """Condition 1: Authenticated business retrieves directory with 200 OK."""
+        self._login("matrix-business")
+        res = self.client.get("/api/influencers/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("results", res.data)
+        self.assertGreaterEqual(res.data["count"], 1)
+        found = any(c["id"] == self.influencer_profile.id for c in res.data["results"])
+        self.assertTrue(found, "Created influencer should appear in business directory")
+
+        # Can also fetch single creator detail
+        detail_res = self.client.get(f"/api/influencers/{self.influencer_profile.id}/")
+        self.assertEqual(detail_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_res.data["full_name"], "Matrix Influencer")
+
+    def test_condition_2_authenticated_influencer_receives_403(self):
+        """Condition 2: Authenticated influencer is rejected with 403 Forbidden."""
+        self._login("matrix-influencer")
+        res = self.client.get("/api/influencers/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res.data.get("detail"), "Only business accounts can perform this action.")
+
+        # Influencer also cannot fetch single creator detail via business endpoint
+        detail_res = self.client.get(f"/api/influencers/{self.influencer_profile.id}/")
+        self.assertEqual(detail_res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(detail_res.data.get("detail"), "Only business accounts can perform this action.")
+
+    def test_condition_3_unauthenticated_request_receives_401(self):
+        """Condition 3: Unauthenticated caller receives 401 Unauthorized."""
+        self.client.credentials()  # clear credentials
+        res = self.client.get("/api/influencers/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        detail_res = self.client.get(f"/api/influencers/{self.influencer_profile.id}/")
+        self.assertEqual(detail_res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_condition_4_unauthorized_user_without_business_role_receives_403(self):
+        """Condition 4: Authenticated user without business profile/role receives 403 Forbidden."""
+        self._login("matrix-plain")
+        res = self.client.get("/api/influencers/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res.data.get("detail"), "Only business accounts can perform this action.")
+
+    def test_condition_5_owner_account_can_browse_directory(self):
+        """Condition 5: Authenticated platform owner can browse directory with 200 OK."""
+        self._login("matrix-owner")
+        res = self.client.get("/api/influencers/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("results", res.data)
+

@@ -34,8 +34,15 @@ function redirectToOwnerLogin() {
   if (typeof window !== "undefined") window.location.href = OWNER_LOGIN_ROUTE;
 }
 
+const rawBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+const normalizedBaseUrl = rawBaseUrl.endsWith("/api")
+  ? rawBaseUrl
+  : rawBaseUrl.endsWith("/")
+    ? `${rawBaseUrl}api`
+    : `${rawBaseUrl}/api`;
+
 export const adminClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api",
+  baseURL: normalizedBaseUrl,
   timeout: 20000,
 });
 
